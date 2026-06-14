@@ -1,0 +1,57 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="PackedScene" path="res://src/player/player.tscn" id="1"]
+[ext_resource type="PackedScene" path="res://src/camera/camera_rig.tscn" id="3"]
+[ext_resource type="Script" path="res://src/arena/EncounterSpawner.gd" id="5"]
+[ext_resource type="PackedScene" path="res://src/arena/procedural_combat_terrain.tscn" id="7"]
+[ext_resource type="Resource" path="res://src/arena/example_spawn_encounter.tres" id="8"]
+
+[sub_resource type="Environment" id="environment"]
+background_mode = 1
+background_color = Color(0.13, 0.14, 0.18, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.7, 0.75, 0.85, 1)
+ambient_light_energy = 0.7
+
+[sub_resource type="StandardMaterial3D" id="floor_material"]
+albedo_color = Color(0.42, 0.43, 0.47, 1)
+
+[sub_resource type="BoxMesh" id="floor_mesh"]
+material = SubResource("floor_material")
+size = Vector3(260, 1, 260)
+
+[sub_resource type="BoxShape3D" id="floor_shape"]
+size = Vector3(260, 1, 260)
+
+[node name="Graybox" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("environment")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866, 0.383, -0.3214, 0, 0.6428, 0.766, 0.5, -0.6634, 0.5567, 0, 12, 0)
+shadow_enabled = true
+
+[node name="ProceduralCombatTerrain" parent="." instance=ExtResource("7")]
+
+[node name="Floor" type="StaticBody3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.5, 0)
+
+[node name="Mesh" type="MeshInstance3D" parent="Floor"]
+visible = false
+mesh = SubResource("floor_mesh")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="Floor"]
+shape = SubResource("floor_shape")
+
+[node name="PlayerSpawn" type="Marker3D" parent="." groups=["player_spawn"]]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3)
+
+[node name="Player" parent="." instance=ExtResource("1")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3)
+
+[node name="EncounterSpawner" type="Node3D" parent="."]
+script = ExtResource("5")
+encounter = ExtResource("8")
+
+[node name="CameraRig" parent="." instance=ExtResource("3")]

@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="MeleeWeaponStats" format=3 uid="uid://c8k4rflu7myx6"]
+
+[ext_resource type="Script" uid="uid://cow73rss5nout" path="res://src/combat/melee_weapon_stats.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+short_windup_seconds = 0.1
+settle_seconds = 0.09
+hang_seconds = 0.16
+hold_threshold_seconds = 0.35
+hold_grace_seconds = 0.05
+recovery_buffer_seconds = 0.2
+slam_rise_seconds = 0.12
+slam_apex_seconds = 0.04
+slam_hit_seconds = 0.055
+slam_recovery_seconds = 0.42

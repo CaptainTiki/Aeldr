@@ -1,0 +1,106 @@
+[gd_scene load_steps=15 format=3]
+
+[ext_resource type="Script" path="res://src/enemy/basic_enemy.gd" id="1"]
+[ext_resource type="Script" path="res://src/combat/hit_receiver.gd" id="2"]
+[ext_resource type="Script" path="res://src/enemy/enemy_daze_feedback.gd" id="3"]
+[ext_resource type="Script" path="res://src/enemy/enemy_deploy_feedback.gd" id="4"]
+
+[sub_resource type="CapsuleShape3D" id="capsule_shape"]
+radius = 0.42
+height = 1.7
+
+[sub_resource type="StandardMaterial3D" id="body_material"]
+albedo_color = Color(0.35, 0.7, 0.55, 1)
+emission_enabled = true
+emission = Color(1, 1, 1, 1)
+emission_energy_multiplier = 0.0
+
+[sub_resource type="CapsuleMesh" id="body_mesh"]
+material = SubResource("body_material")
+radius = 0.42
+height = 1.7
+
+[sub_resource type="StandardMaterial3D" id="visor_material"]
+albedo_color = Color(0.07, 0.09, 0.1, 1)
+
+[sub_resource type="BoxMesh" id="visor_mesh"]
+material = SubResource("visor_material")
+size = Vector3(0.42, 0.18, 0.06)
+
+[sub_resource type="StandardMaterial3D" id="tell_material"]
+transparency = 1
+albedo_color = Color(1, 0.08, 0.02, 0.38)
+shading_mode = 0
+
+[sub_resource type="CylinderMesh" id="tell_mesh"]
+material = SubResource("tell_material")
+top_radius = 0.72
+bottom_radius = 0.72
+height = 0.04
+radial_segments = 32
+
+[sub_resource type="StandardMaterial3D" id="puff_material"]
+shading_mode = 0
+albedo_color = Color(1, 0.96, 0.72, 1)
+
+[sub_resource type="SphereMesh" id="puff_mesh"]
+material = SubResource("puff_material")
+radius = 0.06
+height = 0.12
+
+[sub_resource type="ParticleProcessMaterial" id="puff_process"]
+direction = Vector3(0, 1, 0)
+spread = 180.0
+initial_velocity_min = 2.0
+initial_velocity_max = 4.5
+gravity = Vector3(0, -8, 0)
+scale_min = 0.5
+scale_max = 1.2
+emission_shape = 1
+emission_sphere_radius = 0.4
+
+[node name="BasicEnemy" type="CharacterBody3D" groups=["enemies"]]
+script = ExtResource("1")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
+shape = SubResource("capsule_shape")
+
+[node name="Body" type="Node3D" parent="."]
+
+[node name="Mesh" type="MeshInstance3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.85, 0)
+mesh = SubResource("body_mesh")
+
+[node name="Visor" type="MeshInstance3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.2, -0.38)
+mesh = SubResource("visor_mesh")
+
+[node name="DeployFeedback" type="Node" parent="." node_paths=PackedStringArray("visual_root")]
+script = ExtResource("4")
+visual_root = NodePath("../Body")
+
+[node name="DazeFeedback" type="Node" parent="." node_paths=PackedStringArray("body")]
+script = ExtResource("3")
+body = NodePath("../Body")
+
+[node name="AttackTell" type="Node3D" parent="."]
+visible = false
+
+[node name="SwipeZone" type="MeshInstance3D" parent="AttackTell"]
+transform = Transform3D(1.2, 0, 0, 0, 1, 0, 0, 0, 1.65, 0, 0.025, -0.9)
+mesh = SubResource("tell_mesh")
+
+[node name="HitReceiver" type="Node3D" parent="." groups=["damageable"]]
+script = ExtResource("2")
+max_health = 55.0
+
+[node name="HitParticles" type="GPUParticles3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+emitting = false
+amount = 14
+lifetime = 0.3
+one_shot = true
+explosiveness = 1.0
+process_material = SubResource("puff_process")
+draw_pass_1 = SubResource("puff_mesh")

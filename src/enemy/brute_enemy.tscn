@@ -1,0 +1,123 @@
+[gd_scene load_steps=19 format=3]
+
+[ext_resource type="Script" path="res://src/enemy/brute_enemy.gd" id="1"]
+[ext_resource type="Script" path="res://src/combat/hit_receiver.gd" id="2"]
+[ext_resource type="PackedScene" path="res://src/enemy/brute_shockwave.tscn" id="3"]
+[ext_resource type="Script" path="res://src/enemy/enemy_daze_feedback.gd" id="4"]
+[ext_resource type="Script" path="res://src/enemy/enemy_deploy_feedback.gd" id="5"]
+
+[sub_resource type="CapsuleShape3D" id="capsule_shape"]
+radius = 0.62
+height = 2.15
+
+[sub_resource type="StandardMaterial3D" id="body_material"]
+albedo_color = Color(0.32, 0.38, 0.42, 1)
+emission_enabled = true
+emission = Color(1, 1, 1, 1)
+emission_energy_multiplier = 0.0
+
+[sub_resource type="CapsuleMesh" id="body_mesh"]
+material = SubResource("body_material")
+radius = 0.62
+height = 2.15
+
+[sub_resource type="StandardMaterial3D" id="visor_material"]
+albedo_color = Color(0.05, 0.055, 0.06, 1)
+
+[sub_resource type="BoxMesh" id="visor_mesh"]
+material = SubResource("visor_material")
+size = Vector3(0.58, 0.22, 0.08)
+
+[sub_resource type="StandardMaterial3D" id="melee_tell_material"]
+transparency = 1
+albedo_color = Color(1, 0.1, 0.02, 0.38)
+shading_mode = 0
+
+[sub_resource type="CylinderMesh" id="melee_tell_mesh"]
+material = SubResource("melee_tell_material")
+top_radius = 0.85
+bottom_radius = 0.85
+height = 0.04
+radial_segments = 32
+
+[sub_resource type="StandardMaterial3D" id="slam_tell_material"]
+transparency = 1
+albedo_color = Color(1, 0.55, 0.08, 0.30)
+shading_mode = 0
+
+[sub_resource type="BoxMesh" id="slam_lane_mesh"]
+material = SubResource("slam_tell_material")
+size = Vector3(1, 0.04, 1)
+
+[sub_resource type="StandardMaterial3D" id="puff_material"]
+shading_mode = 0
+albedo_color = Color(1, 0.88, 0.56, 1)
+
+[sub_resource type="SphereMesh" id="puff_mesh"]
+material = SubResource("puff_material")
+radius = 0.07
+height = 0.14
+
+[sub_resource type="ParticleProcessMaterial" id="puff_process"]
+direction = Vector3(0, 1, 0)
+spread = 180.0
+initial_velocity_min = 2.0
+initial_velocity_max = 4.0
+gravity = Vector3(0, -8, 0)
+scale_min = 0.7
+scale_max = 1.5
+emission_shape = 1
+emission_sphere_radius = 0.55
+
+[node name="BruteEnemy" type="CharacterBody3D" groups=["enemies"]]
+script = ExtResource("1")
+shockwave_scene = ExtResource("3")
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.075, 0)
+shape = SubResource("capsule_shape")
+
+[node name="Body" type="Node3D" parent="."]
+
+[node name="Mesh" type="MeshInstance3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.075, 0)
+mesh = SubResource("body_mesh")
+
+[node name="Visor" type="MeshInstance3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.53, -0.56)
+mesh = SubResource("visor_mesh")
+
+[node name="DeployFeedback" type="Node" parent="." node_paths=PackedStringArray("visual_root")]
+script = ExtResource("5")
+visual_root = NodePath("../Body")
+
+[node name="DazeFeedback" type="Node" parent="." node_paths=PackedStringArray("body")]
+script = ExtResource("4")
+body = NodePath("../Body")
+
+[node name="MeleeTell" type="Node3D" parent="."]
+visible = false
+
+[node name="SwipeZone" type="MeshInstance3D" parent="MeleeTell"]
+transform = Transform3D(1.45, 0, 0, 0, 1, 0, 0, 0, 2.0, 0, 0.03, -1.08)
+mesh = SubResource("melee_tell_mesh")
+
+[node name="SlamTell" type="Node3D" parent="."]
+visible = false
+
+[node name="Lane" type="MeshInstance3D" parent="SlamTell"]
+mesh = SubResource("slam_lane_mesh")
+
+[node name="HitReceiver" type="Node3D" parent="." groups=["damageable"]]
+script = ExtResource("2")
+max_health = 150.0
+
+[node name="HitParticles" type="GPUParticles3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.15, 0)
+emitting = false
+amount = 18
+lifetime = 0.3
+one_shot = true
+explosiveness = 1.0
+process_material = SubResource("puff_process")
+draw_pass_1 = SubResource("puff_mesh")
