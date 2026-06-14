@@ -25,7 +25,6 @@ enum State {
 @export_group("Detection")
 @export var wake_range: float = 11.0
 @export var leash_range: float = 17.0
-@export var melee_range: float = 2.6
 @export var slam_min_range: float = 2.2
 @export var slam_max_range: float = 9.5
 
@@ -34,19 +33,26 @@ enum State {
 @export var acceleration: float = 7.5
 @export var knockback_friction: float = 12.0
 @export var windup_turn_rate_degrees: float = 220.0
+@export var normal_hit_knockback_max_speed: float = 1.2
+@export var slam_hit_knockback_threshold: float = 22.0
+@export var slam_hit_knockback_max_speed: float = 6.0
 
 @export_group("Melee")
-@export var melee_windup_seconds: float = 0.65
+@export var melee_range: float = 2.8
+@export var melee_windup_seconds: float = 0.55
 @export var melee_active_seconds: float = 0.20
-@export var melee_recovery_seconds: float = 0.80
-@export var melee_damage: float = 14.0
+@export var melee_recovery_seconds: float = 0.45
+@export var melee_damage: float = 16.0
 @export var melee_hit_radius: float = 2.1
 @export var melee_hit_arc_degrees: float = 90.0
 @export var melee_knockback_force: float = 5.5
 
 @export_group("Slam")
 @export var shockwave_scene: PackedScene
-@export var slam_windup_seconds: float = 1.725
+@export var slam_windup_seconds: float = 0.8
+@export_range(0.0, 1.0) var slam_windup_move_multiplier: float = 0.45
+@export var slam_arm_raise_seconds: float = 0.5
+@export var slam_overhead_pause_seconds: float = 0.18
 @export var slam_recovery_seconds: float = 1.25
 @export var slam_cooldown_seconds: float = 2.75
 @export var slam_forward_offset: float = 1.35
@@ -59,6 +65,10 @@ enum State {
 @export_group("Daze")
 @export var dazed_duration: float = 0.8
 
+@export_group("Player Slam Response")
+@export var player_slam_knockback_multiplier: float = 0.16
+@export var player_slam_daze_multiplier: float = 0.65
+
 @export_group("Feedback")
 @export var flash_energy: float = 2.5
 @export var flash_seconds: float = 0.12
@@ -70,15 +80,19 @@ var _target: Player = null
 var _attack_direction: Vector2 = Vector2.UP
 var _active_hit_delivered: bool = false
 var _slam_spawned: bool = false
+var _slam_direction_locked: bool = false
 var _slam_cooldown_remaining: float = 0.0
 var _movement_velocity: Vector2 = Vector2.ZERO
 var _external_knockback: Vector2 = Vector2.ZERO
 var _flash_tween: Tween = null
 var _body_material: StandardMaterial3D = null
 var _receiver_was_damageable: bool = false
+var _current_dazed_duration: float = 0.8
 
 @onready var _body: Node3D = $Body
 @onready var _mesh: MeshInstance3D = $Body/Mesh
+@onready var _left_arm_pivot: Node3D = $Body/LeftArmPivot
+@onready var _right_arm_pivot: Node3D = $Body/RightArmPivot
 @onready var _melee_tell: Node3D = $MeleeTell
 @onready var _slam_tell: Node3D = $SlamTell
 @onready var _slam_lane: MeshInstance3D = $SlamTell/Lane
@@ -153,11 +167,11 @@ func _process_chase(delta: float) -> void:
 		return
 	var to_target: Vector2 = _to_target_xz()
 	var distance: float = to_target.length()
-	if _can_start_slam(distance):
-		_set_state(State.SLAM_WINDUP)
-		return
 	if distance <= melee_range:
 		_set_state(State.MELEE_WINDUP)
+		return
+	if _can_start_slam(distance):
+		_set_state(State.SLAM_WINDUP)
 		return
 	var direction: Vector2 = to_target / maxf(distance, 0.001)
 	_face_direction(direction)
@@ -172,7 +186,8 @@ func _process_melee_windup(delta: float) -> void:
 
 
 func _process_melee_active() -> void:
-	if not _active_hit_delivered and _try_deliver_melee_hit():
+	var hit_time: float = melee_active_seconds * 0.55
+	if _state_time >= hit_time and not _active_hit_delivered and _try_deliver_melee_hit():
 		_active_hit_delivered = true
 	if _state_time >= melee_active_seconds:
 		_set_state(State.MELEE_RECOVERY)
@@ -186,8 +201,19 @@ func _process_melee_recovery() -> void:
 
 
 func _process_slam_windup(delta: float) -> void:
-	_approach_velocity(Vector2.ZERO, 0.0)
-	_turn_toward_target(delta)
+	var lock_time: float = minf(
+			slam_windup_seconds,
+			slam_arm_raise_seconds + slam_overhead_pause_seconds)
+	if _state_time < lock_time:
+		_turn_toward_target(delta)
+	else:
+		_lock_slam_direction_once()
+	var approach_direction: Vector2 = _attack_direction
+	if _state_time < lock_time and _target != null:
+		var to_target: Vector2 = _to_target_xz()
+		if to_target.length_squared() > 0.0001:
+			approach_direction = to_target.normalized()
+	_approach_velocity_at_speed(approach_direction, chase_speed * slam_windup_move_multiplier, delta)
 	if _state_time >= slam_windup_seconds:
 		_set_state(State.SLAM_RELEASE)
 
@@ -208,8 +234,8 @@ func _process_slam_recovery() -> void:
 
 
 func _process_dazed() -> void:
-	_stop_horizontal_motion()
-	if _state_time < dazed_duration:
+	_movement_velocity = Vector2.ZERO
+	if _state_time < _current_dazed_duration:
 		return
 	_return_to_awake_state()
 
@@ -217,13 +243,6 @@ func _process_dazed() -> void:
 func _apply_motion(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
-	if _state == State.DAZED:
-		_external_knockback = Vector2.ZERO
-		_movement_velocity = Vector2.ZERO
-		velocity.x = _movement_velocity.x
-		velocity.z = _movement_velocity.y
-		move_and_slide()
-		return
 	_external_knockback = _external_knockback.move_toward(Vector2.ZERO, knockback_friction * delta)
 	var combined_velocity: Vector2 = _movement_velocity + _external_knockback
 	velocity.x = combined_velocity.x
@@ -232,7 +251,11 @@ func _apply_motion(delta: float) -> void:
 
 
 func _approach_velocity(direction: Vector2, delta: float) -> void:
-	var target_velocity: Vector2 = direction * chase_speed
+	_approach_velocity_at_speed(direction, chase_speed, delta)
+
+
+func _approach_velocity_at_speed(direction: Vector2, speed: float, delta: float) -> void:
+	var target_velocity: Vector2 = direction * speed
 	if delta <= 0.0:
 		_movement_velocity = Vector2.ZERO
 		return
@@ -399,6 +422,13 @@ func _lock_slam_direction() -> void:
 	])
 
 
+func _lock_slam_direction_once() -> void:
+	if _slam_direction_locked:
+		return
+	_lock_slam_direction()
+	_slam_direction_locked = true
+
+
 func _set_state(next_state: State) -> void:
 	if _state == next_state and _state_time > 0.0:
 		return
@@ -410,7 +440,7 @@ func _set_state(next_state: State) -> void:
 	if next_state == State.MELEE_ACTIVE:
 		_commit_attack_direction()
 	if next_state == State.SLAM_RELEASE:
-		_lock_slam_direction()
+		_lock_slam_direction_once()
 	_state = next_state
 	_state_time = 0.0
 	_active_hit_delivered = false
@@ -437,11 +467,11 @@ func _set_state(next_state: State) -> void:
 			_set_slam_tell_visible(false)
 			_set_body_color(Color(0.42, 0.48, 0.44, 1.0))
 		State.MELEE_WINDUP:
-			_set_melee_tell_visible(true)
+			_set_melee_tell_visible(false)
 			_set_slam_tell_visible(false)
 			_set_body_color(Color(0.95, 0.68, 0.22, 1.0))
 		State.MELEE_ACTIVE:
-			_set_melee_tell_visible(true)
+			_set_melee_tell_visible(false)
 			_set_slam_tell_visible(false)
 			_set_body_color(Color(1.0, 0.28, 0.12, 1.0))
 		State.MELEE_RECOVERY:
@@ -450,8 +480,9 @@ func _set_state(next_state: State) -> void:
 			_set_body_color(Color(0.34, 0.36, 0.34, 1.0))
 		State.SLAM_WINDUP:
 			_set_melee_tell_visible(false)
-			_set_slam_tell_visible(true)
+			_set_slam_tell_visible(false)
 			_set_body_color(Color(0.95, 0.18, 0.10, 1.0))
+			_slam_direction_locked = false
 			print("brute slam windup time=%.2f" % slam_windup_seconds)
 		State.SLAM_RELEASE:
 			_set_melee_tell_visible(false)
@@ -519,26 +550,31 @@ func _update_body_pose() -> void:
 	if _body == null:
 		return
 	var sway: float = sin(Time.get_ticks_msec() * 0.006) * 0.035
+	_set_slam_arm_pose(0.0)
 	match _state:
 		State.CHASE:
 			_body.position.y = 0.0 + sway
 			_body.rotation.x = deg_to_rad(-3.0)
 		State.MELEE_WINDUP:
-			_body.position.y = -0.04
-			_body.rotation.x = deg_to_rad(-8.0)
+			_apply_melee_windup_pose()
 		State.MELEE_ACTIVE:
-			_body.position.y = -0.08
-			_body.rotation.x = deg_to_rad(9.0)
+			_apply_melee_active_pose()
+		State.MELEE_RECOVERY:
+			_apply_melee_recovery_pose()
 		State.SLAM_WINDUP:
-			var windup_t: float = clampf(_state_time / maxf(slam_windup_seconds, 0.001), 0.0, 1.0)
-			_body.position.y = lerpf(0.0, 0.16, windup_t)
-			_body.rotation.x = lerpf(0.0, deg_to_rad(-18.0), windup_t)
+			_apply_slam_windup_pose()
+		State.SLAM_RELEASE:
+			_body.position.y = -0.16
+			_body.rotation.x = deg_to_rad(18.0)
+			_set_slam_arm_pose(1.0)
 		State.SLAM_RECOVERY:
-			_body.position.y = -0.10
-			_body.rotation.x = deg_to_rad(12.0)
+			var recovery_t: float = clampf(_state_time / maxf(slam_recovery_seconds, 0.001), 0.0, 1.0)
+			_body.position.y = lerpf(-0.16, 0.0, recovery_t)
+			_body.rotation.x = lerpf(deg_to_rad(18.0), 0.0, recovery_t)
+			_set_slam_arm_pose(lerpf(1.0, 0.0, recovery_t))
 		State.DAZED:
 			if _daze_feedback != null and _daze_feedback.has_method("apply"):
-				_daze_feedback.call("apply", _state_time, dazed_duration)
+				_daze_feedback.call("apply", _state_time, _current_dazed_duration)
 			else:
 				_body.position.y = -0.08
 				_body.rotation.x = deg_to_rad(18.0)
@@ -547,18 +583,112 @@ func _update_body_pose() -> void:
 			_body.rotation.x = 0.0
 
 
+func _apply_melee_windup_pose() -> void:
+	var windup_t: float = clampf(_state_time / maxf(melee_windup_seconds, 0.001), 0.0, 1.0)
+	_body.position.y = lerpf(0.0, -0.04, windup_t)
+	_body.rotation.x = lerpf(0.0, deg_to_rad(-7.0), windup_t)
+	_set_melee_arm_pose(windup_t, 0.0)
+
+
+func _apply_melee_active_pose() -> void:
+	var clap_t: float = clampf(_state_time / maxf(melee_active_seconds, 0.001), 0.0, 1.0)
+	_body.position.y = -0.06
+	_body.rotation.x = lerpf(deg_to_rad(-7.0), deg_to_rad(7.0), clap_t)
+	_set_melee_arm_pose(1.0 - clap_t, clap_t)
+
+
+func _apply_melee_recovery_pose() -> void:
+	var recovery_t: float = clampf(_state_time / maxf(melee_recovery_seconds, 0.001), 0.0, 1.0)
+	_body.position.y = lerpf(-0.04, 0.0, recovery_t)
+	_body.rotation.x = lerpf(deg_to_rad(7.0), 0.0, recovery_t)
+	_set_melee_arm_pose(0.0, 1.0 - recovery_t)
+
+
+func _apply_slam_windup_pose() -> void:
+	var lock_time: float = minf(
+			slam_windup_seconds,
+			slam_arm_raise_seconds + slam_overhead_pause_seconds)
+	var impact_seconds: float = maxf(slam_windup_seconds - lock_time, 0.001)
+	if _state_time < slam_arm_raise_seconds:
+		var raise_t: float = clampf(_state_time / maxf(slam_arm_raise_seconds, 0.001), 0.0, 1.0)
+		_body.position.y = lerpf(0.0, 0.16, raise_t)
+		_body.rotation.x = lerpf(0.0, deg_to_rad(-14.0), raise_t)
+		_set_slam_arm_pose(raise_t)
+		return
+	if _state_time < lock_time:
+		_body.position.y = 0.16
+		_body.rotation.x = deg_to_rad(-14.0)
+		_set_slam_arm_pose(1.0)
+		return
+	var impact_t: float = clampf((_state_time - lock_time) / impact_seconds, 0.0, 1.0)
+	_body.position.y = lerpf(0.16, -0.16, impact_t)
+	_body.rotation.x = lerpf(deg_to_rad(-14.0), deg_to_rad(18.0), impact_t)
+	_set_slam_arm_pose(lerpf(1.0, 0.0, impact_t))
+
+
+func _set_slam_arm_pose(overhead_weight: float) -> void:
+	var weight: float = clampf(overhead_weight, 0.0, 1.0)
+	var arm_x: float = lerpf(deg_to_rad(8.0), deg_to_rad(150.0), weight)
+	var left_z: float = lerpf(deg_to_rad(-8.0), deg_to_rad(-20.0), weight)
+	var right_z: float = lerpf(deg_to_rad(8.0), deg_to_rad(20.0), weight)
+	_set_arm_rotations(arm_x, left_z, arm_x, right_z)
+
+
+func _set_melee_arm_pose(open_weight: float, clap_weight: float) -> void:
+	var open_t: float = clampf(open_weight, 0.0, 1.0)
+	var clap_t: float = clampf(clap_weight, 0.0, 1.0)
+	var left_x: float = lerpf(deg_to_rad(8.0), deg_to_rad(62.0), open_t)
+	var right_x: float = lerpf(deg_to_rad(8.0), deg_to_rad(62.0), open_t)
+	var left_z: float = lerpf(deg_to_rad(-8.0), deg_to_rad(-78.0), open_t)
+	var right_z: float = lerpf(deg_to_rad(8.0), deg_to_rad(78.0), open_t)
+	left_x = lerpf(left_x, deg_to_rad(82.0), clap_t)
+	right_x = lerpf(right_x, deg_to_rad(82.0), clap_t)
+	left_z = lerpf(left_z, deg_to_rad(-6.0), clap_t)
+	right_z = lerpf(right_z, deg_to_rad(6.0), clap_t)
+	_set_arm_rotations(left_x, left_z, right_x, right_z)
+
+
+func _set_arm_rotations(
+		left_x: float,
+		left_z: float,
+		right_x: float,
+		right_z: float) -> void:
+	if _left_arm_pivot != null:
+		_left_arm_pivot.rotation = Vector3(left_x, 0.0, left_z)
+	if _right_arm_pivot != null:
+		_right_arm_pivot.rotation = Vector3(right_x, 0.0, right_z)
+
+
 func _on_hit_received(_damage: float, knockback: Vector2, _source: Node) -> void:
 	if _state == State.DEPLOYING:
 		return
-	_external_knockback = knockback
+	if _receiver.last_hit_kind == HitReceiver.HIT_KIND_PLAYER_SLAM:
+		_current_dazed_duration = maxf(dazed_duration * player_slam_daze_multiplier, 0.0)
+		_set_state(State.DAZED)
+		_external_knockback = _scaled_incoming_knockback(
+				knockback * player_slam_knockback_multiplier,
+				true)
+	else:
+		_external_knockback = _scaled_incoming_knockback(knockback, false)
 	_hit_particles.restart()
 	_flash()
+
+
+func _scaled_incoming_knockback(knockback: Vector2, is_player_slam: bool) -> Vector2:
+	var speed: float = knockback.length()
+	if speed <= 0.0001:
+		return Vector2.ZERO
+	var max_speed: float = normal_hit_knockback_max_speed
+	if is_player_slam or speed >= slam_hit_knockback_threshold:
+		max_speed = slam_hit_knockback_max_speed
+	return knockback.normalized() * minf(speed, max_speed)
 
 
 func on_attack_blocked(_blocker: Node3D) -> void:
 	if _state == State.DEPLOYING:
 		return
 	_active_hit_delivered = true
+	_current_dazed_duration = dazed_duration
 	_set_state(State.DAZED)
 	_hit_particles.restart()
 	_flash_blocked()

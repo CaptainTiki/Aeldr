@@ -5,9 +5,8 @@ extends Node
 ## damage lands on the exact frame the blade visually connects, and both
 ## delivering all impact through take_hit():
 ## - resolve_swing: radius + arc + facing dot product from the wielder.
-## - resolve_slam: full circle around an impact point in front of the wielder,
-##   knockback radiating outward from that point, hits rippling outward by
-##   distance.
+## - resolve_slam: forward cone from the wielder, with knockback radiating
+##   away from the wielder and hits rippling outward by distance.
 
 @export var stats: MeleeWeaponStats
 
@@ -60,8 +59,8 @@ func resolve_slam() -> void:
 	if swing != null:
 		swing.debug_slam_impact()
 	var forward: Vector2 = _facing_xz()
-	var impact: Vector2 = Vector2(_wielder.global_position.x, _wielder.global_position.z) \
-			+ forward * stats.slam_forward_offset
+	var origin: Vector2 = Vector2(_wielder.global_position.x, _wielder.global_position.z)
+	var min_dot: float = cos(deg_to_rad(stats.slam_arc_degrees * 0.5))
 	var damage: float = stats.damage * stats.slam_damage_multiplier
 	var knockback_force: float = stats.knockback_force * stats.slam_knockback_multiplier
 	for node: Node in get_tree().get_nodes_in_group("damageable"):
@@ -70,13 +69,21 @@ func resolve_slam() -> void:
 			continue
 		if _receiver_belongs_to_wielder(receiver):
 			continue
-		var to_target: Vector2 = Vector2(receiver.global_position.x, receiver.global_position.z) - impact
+		var to_target: Vector2 = Vector2(receiver.global_position.x, receiver.global_position.z) - origin
 		var distance: float = to_target.length()
-		if distance > stats.slam_radius:
+		if distance > stats.slam_range:
 			continue
 		var direction: Vector2 = forward if distance < 0.01 else to_target / distance
+		if direction.dot(forward) < min_dot:
+			continue
 		var delay: float = distance * stats.slam_ripple_seconds_per_meter
-		_deliver_hit(receiver, damage, direction * knockback_force, delay, attack_sequence)
+		_deliver_hit(
+				receiver,
+				damage,
+				direction * knockback_force,
+				delay,
+				attack_sequence,
+				HitReceiver.HIT_KIND_PLAYER_SLAM)
 	# The ground always takes the hit, so the shake fires even on a whiff.
 	var rig: CameraRig = get_tree().get_first_node_in_group("camera_rig") as CameraRig
 	if rig != null:
@@ -89,16 +96,17 @@ func _deliver_hit(
 		damage: float,
 		knockback: Vector2,
 		delay_seconds: float,
-		attack_sequence: int) -> void:
+		attack_sequence: int,
+		hit_kind: StringName = HitReceiver.HIT_KIND_NONE) -> void:
 	if delay_seconds <= 0.0:
 		if attack_sequence != _attack_sequence:
 			return
-		receiver.take_hit(damage, knockback, self)
+		receiver.take_hit(damage, knockback, self, true, hit_kind)
 		return
 	var timer: SceneTreeTimer = get_tree().create_timer(delay_seconds)
 	timer.timeout.connect(func() -> void:
 		if attack_sequence == _attack_sequence and is_instance_valid(receiver):
-			receiver.take_hit(damage, knockback, self))
+			receiver.take_hit(damage, knockback, self, true, hit_kind))
 
 
 func _facing_xz() -> Vector2:

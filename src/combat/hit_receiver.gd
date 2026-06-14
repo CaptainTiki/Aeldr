@@ -9,6 +9,9 @@ signal hit_blocked(damage: float, knockback: Vector2, source: Node)
 signal health_changed(current_health: float, max_health: float)
 signal died
 
+const HIT_KIND_NONE: StringName = &""
+const HIT_KIND_PLAYER_SLAM: StringName = &"player_slam"
+
 @export var max_health: float = 100.0
 ## Indestructible receivers (training dummies) refill instead of dying.
 @export var destructible: bool = true
@@ -16,15 +19,22 @@ signal died
 
 var health: float = 0.0
 var is_dead: bool = false
+var last_hit_kind: StringName = HIT_KIND_NONE
 
 
 func _ready() -> void:
 	reset_health()
 
 
-func take_hit(damage: float, knockback: Vector2, source: Node, can_block: bool = true) -> void:
+func take_hit(
+		damage: float,
+		knockback: Vector2,
+		source: Node,
+		can_block: bool = true,
+		hit_kind: StringName = HIT_KIND_NONE) -> void:
 	if is_dead:
 		return
+	last_hit_kind = hit_kind
 	if can_block \
 			and block_state != null \
 			and block_state.has_method("try_block_hit") \

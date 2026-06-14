@@ -42,6 +42,10 @@ enum State {
 @export_group("Daze")
 @export var dazed_duration: float = 0.8
 
+@export_group("Player Slam Response")
+@export var player_slam_knockback_multiplier: float = 0.32
+@export var player_slam_daze_multiplier: float = 1.0
+
 @export_group("Feedback")
 @export var flash_energy: float = 2.5
 @export var flash_seconds: float = 0.12
@@ -57,6 +61,7 @@ var _external_knockback: Vector2 = Vector2.ZERO
 var _flash_tween: Tween = null
 var _body_material: StandardMaterial3D = null
 var _receiver_was_damageable: bool = false
+var _current_dazed_duration: float = 0.8
 
 @onready var _body: Node3D = $Body
 @onready var _mesh: MeshInstance3D = $Body/Mesh
@@ -166,10 +171,10 @@ func _process_recovery() -> void:
 
 
 func _process_dazed() -> void:
-	_stop_horizontal_motion()
+	_movement_velocity = Vector2.ZERO
 	if _daze_feedback != null and _daze_feedback.has_method("apply"):
-		_daze_feedback.call("apply", _state_time, dazed_duration)
-	if _state_time < dazed_duration:
+		_daze_feedback.call("apply", _state_time, _current_dazed_duration)
+	if _state_time < _current_dazed_duration:
 		return
 	_return_to_awake_state()
 
@@ -184,13 +189,6 @@ func _return_to_awake_state() -> void:
 func _apply_motion(delta: float) -> void:
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
-	if _state == State.DAZED:
-		_external_knockback = Vector2.ZERO
-		_movement_velocity = Vector2.ZERO
-		velocity.x = _movement_velocity.x
-		velocity.z = _movement_velocity.y
-		move_and_slide()
-		return
 	_external_knockback = _external_knockback.move_toward(Vector2.ZERO, knockback_friction * delta)
 	var combined_velocity: Vector2 = _movement_velocity + _external_knockback
 	velocity.x = combined_velocity.x
@@ -361,7 +359,12 @@ func _on_deploy_finished() -> void:
 func _on_hit_received(_damage: float, knockback: Vector2, _source: Node) -> void:
 	if _state == State.DEPLOYING:
 		return
-	_external_knockback = knockback
+	if _receiver.last_hit_kind == HitReceiver.HIT_KIND_PLAYER_SLAM:
+		_current_dazed_duration = maxf(dazed_duration * player_slam_daze_multiplier, 0.0)
+		_set_state(State.DAZED)
+		_external_knockback = knockback * player_slam_knockback_multiplier
+	else:
+		_external_knockback = knockback
 	_hit_particles.restart()
 	_flash()
 
@@ -370,6 +373,7 @@ func on_attack_blocked(_blocker: Node3D) -> void:
 	if _state == State.DEPLOYING:
 		return
 	_active_hit_delivered = true
+	_current_dazed_duration = dazed_duration
 	_set_state(State.DAZED)
 	_hit_particles.restart()
 	_flash_blocked()

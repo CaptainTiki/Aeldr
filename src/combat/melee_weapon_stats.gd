@@ -69,8 +69,10 @@ extends Resource
 @export var swing2_knockback_multiplier: float = 1.15
 
 @export_group("Slam")
-## Hit circle radius around the impact point — full circle, no arc check.
-@export var slam_radius: float = 3.0
+## Forward cone range on the XZ plane.
+@export var slam_range: float = 3.5
+## Full width of the slam cone, centered on facing.
+@export var slam_arc_degrees: float = 90.0
 ## Impact point distance in front of the player on the XZ plane.
 @export var slam_forward_offset: float = 1.5
 @export var slam_damage_multiplier: float = 2.5

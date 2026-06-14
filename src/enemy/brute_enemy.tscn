@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3]
+[gd_scene load_steps=23 format=3]
 
 [ext_resource type="Script" path="res://src/enemy/brute_enemy.gd" id="1"]
 [ext_resource type="Script" path="res://src/combat/hit_receiver.gd" id="2"]
@@ -27,6 +27,21 @@ albedo_color = Color(0.05, 0.055, 0.06, 1)
 [sub_resource type="BoxMesh" id="visor_mesh"]
 material = SubResource("visor_material")
 size = Vector3(0.58, 0.22, 0.08)
+
+[sub_resource type="StandardMaterial3D" id="arm_material"]
+albedo_color = Color(0.24, 0.29, 0.28, 1)
+
+[sub_resource type="BoxMesh" id="arm_mesh"]
+material = SubResource("arm_material")
+size = Vector3(0.18, 0.68, 0.18)
+
+[sub_resource type="StandardMaterial3D" id="hand_material"]
+albedo_color = Color(0.12, 0.14, 0.13, 1)
+
+[sub_resource type="SphereMesh" id="hand_mesh"]
+material = SubResource("hand_material")
+radius = 0.14
+height = 0.28
 
 [sub_resource type="StandardMaterial3D" id="melee_tell_material"]
 transparency = 1
@@ -86,6 +101,28 @@ mesh = SubResource("body_mesh")
 [node name="Visor" type="MeshInstance3D" parent="Body"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.53, -0.56)
 mesh = SubResource("visor_mesh")
+
+[node name="LeftArmPivot" type="Node3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, 0.990268, 0.139173, 0, -0.139173, 0.990268, -0.58, 1.32, -0.04)
+
+[node name="ArmMesh" type="MeshInstance3D" parent="Body/LeftArmPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.34, 0)
+mesh = SubResource("arm_mesh")
+
+[node name="Hand" type="MeshInstance3D" parent="Body/LeftArmPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.74, 0)
+mesh = SubResource("hand_mesh")
+
+[node name="RightArmPivot" type="Node3D" parent="Body"]
+transform = Transform3D(1, 0, 0, 0, 0.990268, 0.139173, 0, -0.139173, 0.990268, 0.58, 1.32, -0.04)
+
+[node name="ArmMesh" type="MeshInstance3D" parent="Body/RightArmPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.34, 0)
+mesh = SubResource("arm_mesh")
+
+[node name="Hand" type="MeshInstance3D" parent="Body/RightArmPivot"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.74, 0)
+mesh = SubResource("hand_mesh")
 
 [node name="DeployFeedback" type="Node" parent="." node_paths=PackedStringArray("visual_root")]
 script = ExtResource("5")
